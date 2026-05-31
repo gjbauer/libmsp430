@@ -7,6 +7,8 @@ When trying to use mspdebug using the 'tilib' option on my persoan Linux box, I
 could not find a working zip of 'MSP430DLLv3' to build, so I collected the 
 patches and posted them in this repo to share.
 
+In this fork of the fork, I manually applied the patches found [here](https://github.com/BuLogics/libMSP430/pull/2) and [here](https://github.com/grahame-student/build_mspdebug/blob/main/libboost-1.74.patch) in addition to some fighting with the remaining compiler error for a few minutes.
+
 
 # Branches
   master : our patched branch of MSP430DLLv3 
