@@ -79,7 +79,7 @@ namespace TI
 			std::string name;
 			bool isXoffFlowOn;
 			Status status;
-			boost::asio::io_service* ioService;
+			boost::asio::io_context* ioService;
 			boost::asio::serial_port* port;
 			ComState comState;
 

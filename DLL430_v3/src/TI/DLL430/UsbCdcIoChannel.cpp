@@ -227,7 +227,7 @@ bool UsbCdcIoChannel::openPort()
 {
 	const std::string dev = portPrefix + name;
 		
-	ioService = new boost::asio::io_service;
+	ioService = new boost::asio::io_context;
 	port = new boost::asio::serial_port(*ioService);
 
 	if ( boost::system::error_code ec = port->open(dev, ec) )
@@ -235,7 +235,7 @@ bool UsbCdcIoChannel::openPort()
 		int retry = 5;
 		while (ec && --retry )
 		{
-			boost::this_thread::sleep(boost::get_system_time() + boost::posix_time::milliseconds(5));
+			boost::this_thread::sleep(boost::get_system_time() + boost::asio::chrono::milliseconds(5));
 			ec = port->open(dev, ec);
 		}
 
@@ -326,7 +326,7 @@ public:
 
 	int read(unsigned char* buf, size_t bufSize, uint32_t timeout)
 	{
-		timer.expires_from_now(boost::posix_time::milliseconds(timeout));
+		timer.expires_from_now(boost::asio::chrono::milliseconds(timeout));
 		timer.async_wait(boost::bind(&AsyncTransferHandler::onTimeout, this, _1));
 
 		async_read(port, buffer(buf, bufSize),
