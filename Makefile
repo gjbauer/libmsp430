@@ -1,3 +1,5 @@
+UNAME_M := $(shell uname -m)
+
 CXX:= g++
 
 DEFINES := -DUNIX
@@ -29,7 +31,14 @@ INCLUDES += -I$(BOOST_DIR)
 LIBDIRS += -L$(BOOST_DIR)/stage/lib
 endif
 
-LIBS := -lboost_thread -lboost_filesystem -lboost_date_time -lboost_system
+LIBS := -lboost_thread -lboost_filesystem -lboost_date_time  
+
+ifeq ($(UNAME_M), aarch64)
+	LIBS += -L/usr/local/lib/cmake/boost_system-1.92.0
+else
+	LIBS += -lboost_system
+endif
+
 
 SRC := \
 	./HalObjectDb/src/HalObjectDb.cpp \
