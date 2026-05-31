@@ -47,9 +47,9 @@ extern const char deviceUnknown[] = "DeviceUnknown";
 typedef ClockInfo<GCC_NONE, 0x0000, EmptyEemTimer, EmptyEemClockNames> NoClockInfo;
 
 //"null" id
-typedef IdCode<0x00, 0x00, 0xFF, 0xFF, 0xFFFF, -1, 0xFF> IdCodeUnknownType;
+typedef IdCode<0x00, 0x00, 0xFF, 0xFF, 0xFFFF, static_cast<char>(-1), 0xFF> IdCodeUnknownType;
 //just some mask with no masking capability (all 1s)
-typedef IdCode<0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFFFF, -1, 0xFF> MaskUnknownType;
+typedef IdCode<0xFFFF, 0xFFFF, 0xFF, 0xFF, 0xFFFF, static_cast<char>(-1), 0xFF> MaskUnknownType;
 typedef Match<IdCodeUnknownType, MaskUnknownType> MatchUnknownType;
 
 typedef MemoryInfo<

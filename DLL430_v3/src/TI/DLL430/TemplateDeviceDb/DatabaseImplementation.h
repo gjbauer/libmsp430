@@ -43,7 +43,7 @@
 #endif
 
 #include <vector>
-#include <boost/tr1/tuple.hpp>
+#include <boost/tuple/tuple.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/assign/list_of.hpp>
 

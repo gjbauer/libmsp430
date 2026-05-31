@@ -94,19 +94,19 @@ DebugManagerV3::DebugManagerV3 (DeviceHandleV3* parent, const DeviceInfo* devInf
  , resetCycleCounterBeforeNextStep(true)
  , storagePollingActive(false)
 {
-	this->waitForEem.setCallBack( boost::bind(&DebugManagerV3::localCallback, this, _1, _2), 0 );
+	this->waitForEem.setCallBack( boost::bind(&DebugManagerV3::localCallback, this, boost::placeholders::_1, boost::placeholders::_2), 0 );
 	this->waitForEem.setAsyncMode(false);
 
-	this->waitForJState.setCallBack( boost::bind(&DebugManagerV3::localCallback, this, _1, _2), 0 );
+	this->waitForJState.setCallBack( boost::bind(&DebugManagerV3::localCallback, this, boost::placeholders::_1, boost::placeholders::_2), 0 );
 	this->waitForJState.setAsyncMode(true);
 
-	this->waitForStorage.setCallBack( boost::bind(&DebugManagerV3::localCallback, this, _1, _2), 0 );
+	this->waitForStorage.setCallBack( boost::bind(&DebugManagerV3::localCallback, this, boost::placeholders::_1, boost::placeholders::_2), 0 );
 	this->waitForStorage.setAsyncMode(true);
 
 	createModuleStrings(devInfo->getClockMapping());
 	createClockStrings(devInfo->getClockNames());
 
-	eventNotifier.setEventHandler( boost::bind(&DebugManagerV3::runEvent, this, _1) );
+	eventNotifier.setEventHandler( boost::bind(&DebugManagerV3::runEvent, this, boost::placeholders::_1) );
 	eventNotifier.startProcessingEvents();
 }
 

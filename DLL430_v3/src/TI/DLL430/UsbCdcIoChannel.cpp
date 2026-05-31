@@ -48,6 +48,9 @@
 
 #include <boost/thread/thread.hpp>
 
+#include <boost/asio/steady_timer.hpp>
+#include <boost/date_time/posix_time/posix_time.hpp>
+
 #if defined(_WIN32) || defined(_WIN64)
 
 extern "C" {
@@ -235,7 +238,7 @@ bool UsbCdcIoChannel::openPort()
 		int retry = 5;
 		while (ec && --retry )
 		{
-			boost::this_thread::sleep(boost::get_system_time() + boost::asio::chrono::milliseconds(5));
+			boost::this_thread::sleep(boost::get_system_time() + boost::posix_time::milliseconds(5));
 			ec = port->open(dev, ec);
 		}
 
@@ -315,28 +318,34 @@ bool UsbCdcIoChannel::isOpen ()
 
 boost::mutex readWriteMutex;
 
+#if BOOST_VERSION >= 107000
+#define GET_IO_SERVICE(s) ((boost::asio::io_context&)(s).get_executor().context())
+#else
+#define GET_IO_SERVICE(s) ((s).get_io_service())
+#endif
+
 class AsyncTransferHandler
 {
 public:	
 	AsyncTransferHandler(serial_port& port) : 
 		port(port), 
-		timer(port.get_io_service()), 
+		timer(GET_IO_SERVICE(port)), 
 		result(RES_NONE), 
 		bytesTransfered(0) {}
 
 	int read(unsigned char* buf, size_t bufSize, uint32_t timeout)
 	{
-		timer.expires_from_now(boost::asio::chrono::milliseconds(timeout));
+		timer.expires_after(boost::asio::chrono::milliseconds(timeout));
 		timer.async_wait(boost::bind(&AsyncTransferHandler::onTimeout, this, _1));
 
 		async_read(port, buffer(buf, bufSize),
 				 boost::bind(&AsyncTransferHandler::onTransferComplete, this, _1, _2) );
 
-		port.get_io_service().reset();
+		GET_IO_SERVICE(port).restart();
 
 #if defined(_WIN32) || defined(_WIN64)
 		while ( result == RES_NONE )
-			port.get_io_service().run_one();
+			GET_IO_SERVICE(port).run_one();
 
 		if (result != RES_COMPLETE)
 		{
@@ -349,9 +358,9 @@ public:
 			timer.cancel();
 #else
 		while ( result == RES_NONE )
-			port.get_io_service().run();
+			GET_IO_SERVICE(port).run();
 #endif
-		port.get_io_service().stop();
+		GET_IO_SERVICE(port).stop();
 
 		return (result == RES_COMPLETE) ? static_cast<int>(bytesTransfered) : -1;
 	}	
@@ -360,7 +369,7 @@ private:
 	enum Result { RES_NONE, RES_ERROR, RES_TIMEOUT, RES_COMPLETE };
 
 	serial_port& port;
-	deadline_timer timer;
+	boost::asio::steady_timer timer;
 	Result result;
 	int bytesTransfered;
 

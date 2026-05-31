@@ -302,7 +302,7 @@ bool DLL430_OldApiV3::Initialize(char* port, long* version)
 	}
 
 	if(notifyCallback!=NULL)
-		handle->addSystemNotifyCallback( boost::bind(&DLL430_OldApiV3::iNotifyCallback, this, _1, _2, _3, _4) );
+		handle->addSystemNotifyCallback( boost::bind(&DLL430_OldApiV3::iNotifyCallback, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4) );
 
 	if (version)		// pointer not 0
 	{
@@ -332,7 +332,7 @@ bool DLL430_OldApiV3::SetSystemNotfyCallback(SYSTEM_NOTIFY_CALLBACK parSystemNot
 	
 	if(handle && singleDevice)
 	{
-		handle->addSystemNotifyCallback( boost::bind(&DLL430_OldApiV3::iNotifyCallback, this, _1, _2, _3, _4) );
+		handle->addSystemNotifyCallback( boost::bind(&DLL430_OldApiV3::iNotifyCallback, this, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, boost::placeholders::_4) );
 		
 		if ( DebugManager* db_man = singleDevice->getDebugManager() )
 		{
@@ -2769,7 +2769,7 @@ bool DLL430_OldApiV3::FET_FwUpdate(
 	}
 
 	ConfigManager *config = handle->getConfigManager();
-	bool success = config->firmWareUpdate(lpszFileName, boost::bind(callback, _1, _2, _3, clientHandle));
+	bool success = config->firmWareUpdate(lpszFileName, boost::bind(callback, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, clientHandle));
 	
 	//Only perform retries when not using user specified file
 	int retries = 2;
@@ -2781,7 +2781,7 @@ bool DLL430_OldApiV3::FET_FwUpdate(
 		{
 			//Initialize will invalidate the old config manager
 			config = handle->getConfigManager();
-			success = config->firmWareUpdate(lpszFileName, boost::bind(callback, _1, _2, _3, clientHandle));
+			success = config->firmWareUpdate(lpszFileName, boost::bind(callback, boost::placeholders::_1, boost::placeholders::_2, boost::placeholders::_3, clientHandle));
 		}
 	}
 
