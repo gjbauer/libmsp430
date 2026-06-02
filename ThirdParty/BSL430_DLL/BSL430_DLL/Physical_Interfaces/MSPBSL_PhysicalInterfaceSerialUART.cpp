@@ -129,7 +129,7 @@ MSPBSL_PhysicalInterfaceSerialUART::MSPBSL_PhysicalInterfaceSerialUART(string in
 
 
 	//TODO: Catch exception forunknown ports
-	io_service io;
+	io_context io;
     port = new serial_port( io, PORT );
 	port->set_option( serial_port_base::character_size( 8 ) );
 	port->set_option( serial_port_base::flow_control( serial_port_base::flow_control::none ) );
