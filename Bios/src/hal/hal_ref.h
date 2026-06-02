@@ -3,42 +3,42 @@
  *
  * <FILE_BRIEF>
  *
- * Copyright (C) 2012 Texas Instruments Incorporated - http://www.ti.com/ 
- * 
- * 
- *  Redistribution and use in source and binary forms, with or without 
- *  modification, are permitted provided that the following conditions 
+ * Copyright (C) 2012 Texas Instruments Incorporated - http://www.ti.com/
+ *
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions
  *  are met:
  *
- *    Redistributions of source code must retain the above copyright 
+ *    Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  *
  *    Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the 
- *    documentation and/or other materials provided with the   
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the
  *    distribution.
  *
  *    Neither the name of Texas Instruments Incorporated nor the names of
  *    its contributors may be used to endorse or promote products derived
  *    from this software without specific prior written permission.
  *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
+ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
  *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.         
+ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 //! \ingroup MODULHAL
 //!  \file hal_ref.h
-//!  
-//!  
+//!
+//!
 
 #ifndef _HAL_REF_H_
 #define _HAL_REF_H_
@@ -48,7 +48,7 @@
  * HAL Function Prototypes
  */
 #define MACRO(x)  short _hal_##x (unsigned short flags);
-MACRO(Zero)  
+MACRO(Zero)
 MACRO_LIST
 #undef MACRO
 
@@ -60,8 +60,8 @@ void _init_Hal(void);
 // common macros
 #define HAL_Zero                              ((HalFuncInOut)hal_functions_[ID_Zero].function)
 #define HAL_Init                              ((HalFuncInOut)hal_functions_[ID_Init].function)
-#define HAL_SetVcc                            ((HalFuncInOut)hal_functions_[ID_SetVcc].function)
-#define HAL_GetVcc                            ((HalFuncInOut)hal_functions_[ID_GetVcc].function)
+//#define HAL_SetVcc                            ((HalFuncInOut)hal_functions_[ID_SetVcc].function)
+//#define HAL_GetVcc                            ((HalFuncInOut)hal_functions_[ID_GetVcc].function)
 #define HAL_StartJtag                         ((HalFuncInOut)hal_functions_[ID_StartJtag].function)
 #define HAL_StartJtagActivationCode           ((HalFuncInOut)hal_functions_[ID_StartJtagActivationCode].function)
 #define HAL_StopJtag                          ((HalFuncInOut)hal_functions_[ID_StopJtag].function)
@@ -125,7 +125,9 @@ void _init_Hal(void);
 #define HAL_UnlockC092                          ((HalFuncInOut)hal_functions_[ID_UnlockC092].function)
 #define HAL_HilCommand                          ((HalFuncInOut)hal_functions_[ID_HilCommand].function)
 #define HAL_PollJStateRegFR57xx                 ((HalFuncInOut)hal_functions_[ID_PollJStateRegFR57xx].function)
-#define HAL_PollJStateReg                       ((HalFuncInOut)hal_functions_[ID_PollJStateReg].function)
+#define Hal_PollDStatePCRegEt                   ((HalFuncInOut)hal_functions_[ID_PollDStatePCRegEt].function)
+#define Hal_PollJStateRegEt8                    ((HalFuncInOut)hal_functions_[ID_PollJStateRegEt8].function)
+#define Hal_PollJStateReg                       ((HalFuncInOut)hal_functions_[ID_PollJStateReg].function)
 
 #define HAL_IsJtagFuseBlown                     ((HalFuncInOut)hal_functions_[ID_IsJtagFuseBlown].function)
 #define HAL_ResetXv2                            ((HalFuncInOut)hal_functions_[ID_ResetXv2].function)
@@ -136,7 +138,10 @@ void _init_Hal(void);
 #define HAL_WriteFramQuickXv2                   ((HalFuncInOut)hal_functions_[ID_WriteFramQuickXv2].function)
 #define HAL_SendJtagMailboxXv2                  ((HalFuncInOut)hal_functions_[ID_SendJtagMailboxXv2].function)
 
-#define HAL_ReadAllCpuRegsNon1377Xv2             ((HalFuncInOut)hal_functions_[ID_ReadAllCpuRegsNon1377Xv].function)
-#define HAL_SingleStepJStateXv2                   ((HalFuncInOut)hal_functions_[ID_SingleStepJStateXv2].function)
+#define HAL_ReadAllCpuRegsNon1377Xv2            ((HalFuncInOut)hal_functions_[ID_ReadAllCpuRegsNon1377Xv].function)
+#define HAL_SingleStepJStateXv2                 ((HalFuncInOut)hal_functions_[ID_SingleStepJStateXv2].function)
+#define HAL_ResetMsp430I                        ((HalFuncInOut)hal_functions_[ID_ResetMsp430I].function)
+#define HAL_PollMSP430I40xx                     ((HalFuncInOut)hal_functions_[ID_PollMSP430I40xx].function)
+
+#define HAL_LeaSyncConditional                  ((HalFuncInOut)hal_functions_[ID_LeaSyncConditional].function)
 #endif
- 

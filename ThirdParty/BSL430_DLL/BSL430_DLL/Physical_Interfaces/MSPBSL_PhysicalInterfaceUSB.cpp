@@ -189,7 +189,7 @@ uint16_t MSPBSL_PhysicalInterfaceUSB::RX_Bytes( uint8_t* buf, uint16_t numBytes 
 			return ERROR_READING_DATA; 
 		}
 
-		std::this_thread::sleep_for(boost::asio::chrono::milliseconds(500));
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
 
 	return 0;

@@ -104,39 +104,39 @@ DoTask
             MOVX.A   MyWriteAddr,R10      ; The start address to write to
             MOVX.A   MyWriteSize,R11      ; the number of words to be written
 
-;            MOV     #FWKEY+WRT,&FCTL1     ; configure word-write access
-#ifdef SUBROUTINE
-W1          ; CMP.W   @R12,0(R10)         ; check if content is already there...
-            ; JEQ     Next                ; ...next word if already there
-            MOV     #FWKEY+WRT,&FCTL1     ; configure word-write access
-            MOVX.W  @R12+,0(R10)
-Next
-#else
-            MOV     #JMBCLR0OFF+JMBCLR1OFF+JMBMODE,&SYSJMBC  ; disable auto-clear feature, 16bit mode
+            MOV     #JMBMODE,&SYSJMBC  ; disable auto-clear feature, 16bit mode
             
-W1          BIT     #JMBIN1FG,&SYSJMBC    ; Data available in mailbox?
+W1          BIT     #JMBIN0FG,&SYSJMBC    ; Data available in mailbox?
             JZ      W1                    ; No, wait for data            
-            ;----------Write two Words----------------------------------------;            
-MOV         #FWKEY+BLKWRT,&FCTL1          ; configure Long-Word Write access
+            ;----------Write two Words----------------------------------------;  
             
-            MOV.W   &SYSJMBI0,0(R10)      ; WRITE, move data into Flash     
+L2          BIT     #BUSY,&FCTL3
+            JNZ     L2
+            MOV     #FWKEY,&FCTL1         ; disable word-write access  
+
+MOV         #FWKEY+BLKWRT,&FCTL1          ; configure Long-Word Write access
+           
+            MOV.W   &SYSJMBI0,0(R10)      ; WRITE, move data into Fl            
             
             INCDX.A R10                   ; count up adress
-            DECX.A  R11                   ; decrement length
+            DECX.A  R11                   ; decrement lengthash    
+     
+W2          BIT     #JMBIN1FG,&SYSJMBC    ; Data available in mailbox?
+            JZ      W2   
             
             MOV.W   &SYSJMBI1,0(R10)      ; WRITE, move data into Flash     
             
-Next        BIC     #JMBIN1FG,&SYSJMBC    ; clear the mailbox input flag
-            BIC     #JMBIN0FG,&SYSJMBC    ; clear the mailbox input flag
-#endif
-L2          BIT     #BUSY,&FCTL3
-            JNZ     L2
-            MOV     #FWKEY,&FCTL1         ; disable word-write access
-            
+;Next       BIC     #JMBIN1FG,&SYSJMBC    ; clear the mailbox input flag
+;           BIC     #JMBIN0FG,&SYSJMBC    ; clear the mailbox input flag         
+           
             INCDX.A R10                   ; count up adress
-            DECX.A  R11                   ; decrement length
+            DECX.A  R11                   ; decrement length            
             
-            JNZ     W1           
+            JNZ     W1                          
+
+L3          BIT     #BUSY,&FCTL3
+            JNZ     L3
+            MOV     #FWKEY,&FCTL1         ; disable word-write access
 
 ;--- [4] Restore Context Section -----------------------------------------------
 RestoreR10  MOVX.A  MyR10,R10

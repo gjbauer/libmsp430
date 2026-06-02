@@ -1,36 +1,36 @@
 /*
  * hal.h
  *
- * Copyright (C) 2007 - 2011 Texas Instruments Incorporated - http://www.ti.com/ 
- * 
- * 
- *  Redistribution and use in source and binary forms, with or without 
- *  modification, are permitted provided that the following conditions 
+ * Copyright (C) 2007 - 2011 Texas Instruments Incorporated - http://www.ti.com/
+ *
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions
  *  are met:
  *
- *    Redistributions of source code must retain the above copyright 
+ *    Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  *
  *    Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the 
- *    documentation and/or other materials provided with the   
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the
  *    distribution.
  *
  *    Neither the name of Texas Instruments Incorporated nor the names of
  *    its contributors may be used to endorse or promote products derived
  *    from this software without specific prior written permission.
  *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
+ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
  *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.                                                                                                                                                                                                                                                                                                         
+ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 /**
@@ -49,18 +49,10 @@
 #ifndef _HAL_H_
 #define _HAL_H_
 
-/// Configurations values for StartJtag
-enum INTERFACE_TYPE
-{
-  /// 4 Wire JTAG protocol used
-  JTAG_IF = 0,
-  /// 2 Wire (Spy-bi-wire) JTAG protocol used
-  SPYBIWIRE_IF,
-  /// 2 Wire Devices accessed by 4wire JTAG protocol
-  SPYBIWIREJTAG_IF
-};
+#define T_ARCH_MSP430 0
+#define T_ARCH_MSP432 1
 
-// Event types  send async to DLL First word in message 
+// Event types  send async to DLL First word in message
 enum EVENT_TYPE_FLAGS
 {
     // set if breakpoint is hit
@@ -69,28 +61,10 @@ enum EVENT_TYPE_FLAGS
     STATE_STORAGE_FLAG = 0x2,
     //JSTATE Capute
     JSTATE_CAPTURE_FLAG = 0x4,
+	//Power profiling data capture
+	ENERGYTRACE_INFO = 0x8,
 	// Variable watch event
-    VARIABLE_WATCH_FLAG = 0x8
-};
-
-/// FLASH erase type.
-enum ERASE_TYPE
-{
-  /// Erase a segment.
-  ERASE_SEGMENT = 0,  
-  /// Erase all MAIN memory.
-  ERASE_MAIN,     
-  /// Erase all MAIN and INFORMATION memory.
-  ERASE_ALL,
-  /// Erase all MAIN and IP PROTECTED memory.
-  ERASE_TOTAL,
-};
-
-
-enum MAILBOX_MODE
-{
-	LONG_MODE = 0, 
-	WORD_MODE,
+    VARIABLE_WATCH_FLAG = 0x10
 };
 
 #define NO_FLAG			0x00
@@ -99,32 +73,35 @@ enum MAILBOX_MODE
 #define HAL_FUNCTION(x) short x (unsigned short flags)
 typedef short (*HalFuncInOut)(unsigned short);
 
-union _chain_Configuration{
-  struct __chain_Configuration{
-           unsigned char Num      : 7;
-           unsigned char isMsp430 : 1;
-  }bitAccess;
-  unsigned char byteAccess;
-};
-
 struct _DeviceSettings_
 {
-    unsigned long  clockControlType;    
+    unsigned long  clockControlType;
     unsigned short stopFLL;
+    unsigned short assertBslValidBit;
 };
 typedef struct _DeviceSettings_ DeviceSettings;
 
 struct _DevicePowerSettings_
 {
     unsigned long powerTestRegMask;
+    unsigned long powerTestRegDefault;
     unsigned long enableLpmx5TestReg;
     unsigned long disableLpmx5TestReg;
 
     unsigned short powerTestReg3VMask;
+    unsigned short powerTestReg3VDefault;
     unsigned short enableLpmx5TestReg3V;
-    unsigned short disableLpmx5TestReg3V;    
+    unsigned short disableLpmx5TestReg3V;
 };
 typedef struct _DevicePowerSettings_ DevicePowerSettings;
+
+typedef struct _ARMConfigSettings
+{
+    unsigned long scsBase; // System Control Space base address
+    unsigned long fpbBase; // FLASH Patch Block base address
+    unsigned long interruptOptions; // Options to enable/disable interrupts when single stepping or letting the device run
+    unsigned long ulpDebug; // Options to enable/disable entry to LPM. poll for PB hit in low poer mode
+} ARMConfigSettings;
 
 #ifndef HAL_REC
 #define HAL_REC
@@ -155,6 +132,7 @@ extern void _init_Hal(void);
     MACRO(SetChainConfiguration)             \
     MACRO(GetNumOfDevices)                   \
     MACRO(GetInterfaceMode)                  \
+    MACRO(GetDeviceIdPtr)                    \
     MACRO(SyncJtag_AssertPor_SaveContext)    \
     MACRO(SyncJtag_Conditional_SaveContext)  \
     MACRO(RestoreContext_ReleaseJtag)        \
@@ -192,7 +170,7 @@ extern void _init_Hal(void);
     MACRO(ExecuteFuncletX)                   \
     MACRO(GetDcoFrequencyX)                  \
     MACRO(GetFllFrequencyX)                  \
-    MACRO(WaitForStorageX)                    \
+    MACRO(WaitForStorageX)                   \
     MACRO(BlowFuseXv2)                       \
     MACRO(BlowFuseFram)                      \
     MACRO(SyncJtag_AssertPor_SaveContextXv2) \
@@ -208,8 +186,8 @@ extern void _init_Hal(void);
     MACRO(PsaXv2)                             \
     MACRO(ExecuteFuncletXv2)                  \
     MACRO(UnlockDeviceXv2)                    \
-    MACRO(MagicPattern)			              \
-    MACRO(UnlockC092)			              \
+    MACRO(MagicPattern)                       \
+    MACRO(UnlockC092)                         \
     MACRO(HilCommand)                         \
     MACRO(PollJStateReg)                      \
     MACRO(PollJStateRegFR57xx)                \
@@ -217,13 +195,41 @@ extern void _init_Hal(void);
     MACRO(ResetXv2)                           \
     MACRO(WriteFramQuickXv2)                  \
     MACRO(SendJtagMailboxXv2)                 \
-    MACRO(SingleStepJStateXv2)
+    MACRO(SingleStepJStateXv2)                \
+    MACRO(PollJStateRegEt8)                   \
+    MACRO(ResetStaticGlobalVars)              \
+    MACRO(Reset430I)                          \
+    MACRO(PollJStateReg430I)                  \
+    MACRO(PollJStateReg20)                    \
+    MACRO(SwitchMosfet)                       \
+    MACRO(ResetL092)                          \
+    MACRO(DummyMacro)                         \
+    MACRO(Reset5438Xv2)                       \
+    MACRO(LeaSyncConditional)                 \
+    MACRO(GetJtagIdCodeArm)                   \
+    MACRO(ScanApArm)                          \
+    MACRO(MemApTransactionArm)                \
+    MACRO(ReadAllCpuRegsArm)                  \
+    MACRO(WriteAllCpuRegsArm)                 \
+    MACRO(EnableDebugArm)                     \
+    MACRO(DisableDebugArm)                    \
+    MACRO(RunArm)                             \
+    MACRO(HaltArm)                            \
+    MACRO(ResetArm)                           \
+    MACRO(SingleStepArm)                      \
+    MACRO(WaitForDebugHaltArm)                \
+    MACRO(MemApTransactionArmSwd)             \
+    MACRO(GetInterfaceModeArm)                \
+    MACRO(PollDStatePCRegEt)                  \
+    MACRO(GetCpuIdArm)                        \
+    MACRO(CheckDapLockArm)                    \
+    MACRO(UnlockDap)                          \
+    MACRO(UssSyncConditional)
 
-      
 #define MACRO(x)  ID_##x,
 enum hal_id
 {
-    MACRO(Zero)  
+    MACRO(Zero)
     MACRO_LIST
     NUM_MACROS
 };

@@ -3,53 +3,46 @@
  *
  * IOChannel via CDC (VCOM) over USB communication.
  *
- * Copyright (C) 2007 - 2011 Texas Instruments Incorporated - http://www.ti.com/ 
- * 
- * 
- *  Redistribution and use in source and binary forms, with or without 
- *  modification, are permitted provided that the following conditions 
+ * Copyright (C) 2007 - 2011 Texas Instruments Incorporated - http://www.ti.com/
+ *
+ *
+ *  Redistribution and use in source and binary forms, with or without
+ *  modification, are permitted provided that the following conditions
  *  are met:
  *
- *    Redistributions of source code must retain the above copyright 
+ *    Redistributions of source code must retain the above copyright
  *    notice, this list of conditions and the following disclaimer.
  *
  *    Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the 
- *    documentation and/or other materials provided with the   
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the
  *    distribution.
  *
  *    Neither the name of Texas Instruments Incorporated nor the names of
  *    its contributors may be used to endorse or promote products derived
  *    from this software without specific prior written permission.
  *
- *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
- *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ *  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
  *  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
- *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
- *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
- *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
+ *  A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ *  OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ *  SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
  *  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
  *  DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
- *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
- *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
- *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.                                                                                                                                                                                                                                                                                                         
+ *  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ *  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef _MSC_VER
-#ifndef _CRT_SECURE_NO_WARNINGS
-#define _CRT_SECURE_NO_WARNINGS //disabling warnings to use secure c-function versions (e.g. strcpy_s) as this is not compatible with none MS development
-#endif
-#endif
+#include <pch.h>
 
 #include "UsbCdcIoChannel.h"
-#include <boost/asio.hpp>
-#include <boost/bind.hpp>
 #include "logging/Logging.h"
 
-#include <boost/thread/thread.hpp>
-
-#include <boost/asio/steady_timer.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
+#include <boost/asio/read.hpp>
+#include <boost/asio/write.hpp>
+#include <boost/asio/io_context.hpp>
 
 #if defined(_WIN32) || defined(_WIN64)
 
@@ -58,7 +51,18 @@ extern "C" {
 	#include <dbt.h>
 }
 
-	static const std::string portPrefix("\\\\.\\");
+#elif defined(__APPLE__)
+
+#include <CoreFoundation/CoreFoundation.h>
+#include <IOKit/IOKitLib.h>
+#include <IOKit/IOCFPlugIn.h>
+#include <IOKit/usb/IOUSBLib.h>
+#include <IOKit/IOMessage.h>
+#include <mach/mach_port.h>
+#include <IOKit/serial/IOSerialKeys.h>
+#include <sys/stat.h>
+#define MAXPATHLEN 128
+#define MAXNAMELEN 64
 
 #else
 
@@ -67,12 +71,11 @@ extern "C" {
 
 	using namespace boost::filesystem;
 
-	static const std::string portPrefix("");
-
 #endif
 
 using namespace TI::DLL430;
 using namespace std;
+using namespace std::placeholders;
 using namespace boost::asio;
 
 #define  XOFF		0x13
@@ -82,75 +85,55 @@ using namespace boost::asio;
 #define  XMASK_ON	0x01
 #define  XMASK_MASK	0x00
 
-#ifndef NDEBUG
-#define DB_PRINT
-#endif
 
-UsbCdcIoChannel::UsbCdcIoChannel(std::string name, std::string id)
- : inputReportSize(255)
- , actSize(0)
- , expSize(0)
- , name(name)
- , isXoffFlowOn(true)
- , status(freeForUse)
+UsbCdcIoChannel::UsbCdcIoChannel(const PortInfo& portInfo)
+ : UsbIoChannel(portInfo)
+ , inputBuffer(260)
  , ioService(0)
  , port(0)
  , comState(ComStateRcv)
+ , bytesReceived(0)
+ , timerEvent(false)
+ , readEvent(false)
+ , cancelled(false)
 {
-	serial = retrieveSerialFromId(id);
 	retrieveStatus();
 }
 
-UsbCdcIoChannel::~UsbCdcIoChannel ()
+UsbCdcIoChannel::~UsbCdcIoChannel()
 {
 	this->cleanup();
 }
 
-
-void UsbCdcIoChannel::enumeratePorts (PortMap & portList, bool open)
+void UsbCdcIoChannel::createCdcPortList(const uint16_t vendorId, const uint16_t productId, PortMap& portList)
 {
 #if defined(_WIN32) || defined(_WIN64)
-	typedef boost::array<BYTE, maxBufferLength> RegistryProperty;
+	stringstream cdcIdStream;
+	cdcIdStream << hex << setfill('0') << "USB\\VID_" << setw(4) << vendorId << "&PID_" << setw(4) << productId;
 
-	const std::string tiVendorId("VID_2047");
-	const std::string cdcClassDev("PID_0010"); ///< product id 0010 means CDC
-	const std::string cdcId(UsbDevClass() + '\\' + tiVendorId + '&' + cdcClassDev);
-	
-	char deviceId[maxBufferLength];
+	const int BUFFER_SIZE = 128;
 
-	HDEVINFO hDevInfo = ::SetupDiGetClassDevs(NULL, UsbDevClass().c_str(), 0, DIGCF_PRESENT | DIGCF_ALLCLASSES );
+	HDEVINFO hDevInfo = ::SetupDiGetClassDevs(nullptr, "USB", 0, DIGCF_PRESENT | DIGCF_ALLCLASSES );
 	SP_DEVINFO_DATA devInfoData;
 	devInfoData.cbSize = sizeof(SP_DEVINFO_DATA);
-	
-	for (int i = 0; ::SetupDiEnumDeviceInfo(hDevInfo,i,&devInfoData); ++i )
-	{	
-		deviceId[0]=0;
-		BOOL result = ::SetupDiGetDeviceInstanceId(hDevInfo,&devInfoData,deviceId,maxBufferLength,NULL);
+
+	for (int i = 0; ::SetupDiEnumDeviceInfo(hDevInfo, i, &devInfoData); ++i )
+	{
+		char deviceId[BUFFER_SIZE] = {0};
+		BOOL result = ::SetupDiGetDeviceInstanceId(hDevInfo, &devInfoData, deviceId, BUFFER_SIZE, nullptr);
 
 		//not TI and/or not CDC
-		if( !result || 0 != cdcId.compare( std::string( deviceId).substr( 0, cdcId.size() ) ) )
-		{
-			continue;
-		} 
-		else 
+		if (result && string(deviceId).find(cdcIdStream.str()) != string::npos)
 		{
 			DWORD propertyType = 0;
-			 
-			RegistryProperty property;
-			::SetupDiGetDeviceRegistryProperty(
-				hDevInfo, &devInfoData, SPDRP_FRIENDLYNAME,
-                &propertyType, &property[0], maxBufferLength, NULL
-			);
+			BYTE property[BUFFER_SIZE] = {0};
 
+			::SetupDiGetDeviceRegistryProperty(hDevInfo, &devInfoData, SPDRP_FRIENDLYNAME, &propertyType, property, BUFFER_SIZE, nullptr);
 
-			std::stringstream sstr;
-			for(size_t i = 0; i < property.size(); ++i)
+			stringstream sstr;
+			for (int k = 0; k < BUFFER_SIZE && property[k] != 0; ++k)
 			{
-				sstr << property[i];
-				if(0 == property[i])
-				{
-					break;
-				}
+				sstr << property[k];
 			}
 
 			const size_t idBegin = sstr.str().find_last_of('(') + 1;
@@ -158,61 +141,232 @@ void UsbCdcIoChannel::enumeratePorts (PortMap & portList, bool open)
 			assert(idEnd > idBegin);
 
 			const string name = sstr.str().substr(idBegin, idEnd - idBegin);
-		
-			UsbCdcIoChannel * cdcElem = new UsbCdcIoChannel(name,deviceId);
-			portList.insert(std::make_pair(name,cdcElem));
+
+			if ((name[0] && (sstr.str().compare(0, 19, "MSP Debug Interface") == 0 ))|| (name[0] && (sstr.str().compare(0, 19, "MSP-FET430UIF - CDC") == 0 )))
+			{
+				PortInfo portInfo(name, string("\\\\.\\")+name, PortInfo::CDC, retrieveSerialFromId(deviceId));
+				if (name[0] && (sstr.str().compare(0, 19, "MSP Debug Interface") == 0 ))
+				{
+					portInfo.useFlowControl = false;
+					portInfo.useCrc = false;
+				}
+				else if (name[0] && (sstr.str().compare(0, 19, "MSP-FET430UIF - CDC") == 0 ))
+				{
+					portInfo.useFlowControl = true;
+					portInfo.useCrc = true;
+				}
+
+				//if (open)
+				{
+					portInfo.status = UsbCdcIoChannel(portInfo).getStatus();
+				}
+				portList[portInfo.name] = portInfo;
+			}
 		}
 	}
 	::SetupDiDestroyDeviceInfoList(hDevInfo);//free resources
 
-#else
+#elif defined(__APPLE__)
+	CFMutableDictionaryRef matchingDict;
+	kern_return_t kernResult;
+	io_iterator_t iterator;
 
-	// Implementation based on Debian
-	path p(string("/dev/serial/by-id/"));
-	if ( exists(p) && is_directory(p) )
+	matchingDict = IOServiceMatching(kIOSerialBSDServiceValue);
+	CFDictionarySetValue(matchingDict, CFSTR(kIOSerialBSDTypeKey), CFSTR(kIOSerialBSDAllTypes));
+	kernResult = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, &iterator);
+
+	if (kernResult != KERN_SUCCESS) {
+		return;
+	}
+
+	for (;;)
 	{
-		const directory_iterator end;
-		for ( directory_iterator it(p); it != end; ++it )
+		io_context_t device = IOIteratorNext(iterator);
+		if (device == 0)
 		{
-			const string deviceId = it->path().filename().c_str();
-			if ( is_symlink(*it) &&
-				deviceId.find("usb-Texas_Instruments_Texas_Instruments_MSP430-JTAG_") != string::npos )
+			if (!IOIteratorIsValid(iterator))
 			{
-				char linkPath[255] = {0};
-				const int len = readlink( it->path().string().c_str(), linkPath, sizeof(linkPath) );
-				if ( len > 0 )
+				/*
+				 * Apple documentation advises resetting the iterator if
+				 * it should become invalid during iteration.
+				 */
+				IOIteratorReset(iterator);
+				device = IOIteratorNext(iterator);
+				if (device == 0)
 				{
-					string portPath = (linkPath[0] == '/') ? string(linkPath) : p.string() + linkPath;
-					portList[portPath] = new UsbCdcIoChannel(portPath, deviceId);
+					break;
 				}
 			}
+			else
+			{
+				break;
+			}
+		}
+
+		CFTypeRef bsdPathAsCFString = nullptr;
+		CFTypeRef vendorIdAsCFNumber = nullptr;
+		CFTypeRef productIdAsCFNumber = nullptr;
+		CFTypeRef ttyDeviceAsCFString = nullptr;
+		CFTypeRef interfaceNumberAsCFNumber = nullptr;
+
+		char ttyDevice[MAXNAMELEN];
+		SInt32 interfaceNumber;
+		char path[MAXPATHLEN];
+		SInt32 vID = 0;
+		SInt32 pID = 0;
+
+		// Get the name of the modem's callout device
+		bsdPathAsCFString = IORegistryEntryCreateCFProperty(device, CFSTR(kIOCalloutDeviceKey),
+		                                                    kCFAllocatorDefault, 0);
+
+		ttyDeviceAsCFString = IORegistryEntryCreateCFProperty(device, CFSTR(kIOTTYDeviceKey),
+		                                                      kCFAllocatorDefault, 0);
+
+		io_name_t name;
+		IORegistryEntryGetName(device, name);
+
+		// wander up the hierarchy until we find the level that can give us the
+		// vendor/product IDs and the product name, if available
+		io_registry_entry_t parent;
+		kern_return_t kernResult = IORegistryEntryGetParentEntry(device, kIOServicePlane, &parent);
+		IOObjectRelease(device);
+
+        while ( kernResult == KERN_SUCCESS && ( !vendorIdAsCFNumber || !productIdAsCFNumber || !interfaceNumberAsCFNumber) )
+		{
+			if (!vendorIdAsCFNumber)
+			{
+				vendorIdAsCFNumber = IORegistryEntrySearchCFProperty(parent,
+				                                                     kIOServicePlane,
+				                                                     CFSTR(kUSBVendorID),
+				                                                     kCFAllocatorDefault, 0);
+			}
+
+			if (!productIdAsCFNumber)
+			{
+				productIdAsCFNumber = IORegistryEntrySearchCFProperty(parent,
+				                                                      kIOServicePlane,
+				                                                      CFSTR(kUSBProductID),
+				                                                      kCFAllocatorDefault, 0);
+			}
+
+			if (!interfaceNumberAsCFNumber)
+			{
+				interfaceNumberAsCFNumber = IORegistryEntrySearchCFProperty(parent,
+				                                                            kIOServicePlane,
+				                                                            CFSTR(kUSBInterfaceNumber),
+				                                                            kCFAllocatorDefault, 0);
+			}
+
+			io_registry_entry_t oldparent = parent;
+			kernResult = IORegistryEntryGetParentEntry(parent, kIOServicePlane, &parent);
+			IOObjectRelease(oldparent);
+		}
+
+		if (interfaceNumberAsCFNumber)
+		{
+			CFNumberGetValue((CFNumberRef)interfaceNumberAsCFNumber, kCFNumberSInt32Type, &interfaceNumber);
+			CFRelease(interfaceNumberAsCFNumber);
+			if (interfaceNumber != 1)
+			{
+				continue;
+			}
+		}
+
+		if (ttyDeviceAsCFString)
+		{
+			CFStringGetCString((CFStringRef)ttyDeviceAsCFString, ttyDevice, PATH_MAX, kCFStringEncodingUTF8);
+			CFRelease(ttyDeviceAsCFString);
+		}
+
+		if (bsdPathAsCFString)
+		{
+			CFStringGetCString((CFStringRef)bsdPathAsCFString, path, PATH_MAX, kCFStringEncodingUTF8);
+			CFRelease(bsdPathAsCFString);
+		}
+
+		if (vendorIdAsCFNumber)
+		{
+			CFNumberGetValue((CFNumberRef)vendorIdAsCFNumber, kCFNumberSInt32Type, &vID);
+			CFRelease(vendorIdAsCFNumber);
+		}
+
+		if (productIdAsCFNumber)
+		{
+			CFNumberGetValue((CFNumberRef)productIdAsCFNumber, kCFNumberSInt32Type, &pID);
+			CFRelease(productIdAsCFNumber);
+		}
+
+		if ((vID == vendorId) && (pID == productId))
+		{
+			PortInfo portInfo(ttyDevice, path, PortInfo::CDC);
+			if (productId == 0x0010)
+			{
+				portInfo.useFlowControl = true;
+				portInfo.useCrc = true;
+			}
+			portInfo.status = UsbCdcIoChannel(portInfo).getStatus();
+			portList[portInfo.name] = portInfo;
 		}
 	}
-	// Use workaround for distributions without /dev/serial/by-id
-	else
+#else
+	stringstream cdcIdStream;
+	cdcIdStream << hex << setfill('0') << "usb:v" << setw(4) << vendorId << "p" << setw(4) << productId;
+
+	path p("/sys/class/tty/");
+	if (exists(p) && is_directory(p))
 	{
-		for (int i = 0; i < 16; ++i)
+		const directory_iterator end;
+		for (directory_iterator it(p); it != end; ++it)
 		{
-			stringstream portName;
-			portName << "ttyACM" << i;
-			string portPath = string("/dev/") + portName.str();
-			if ( !access(portPath.c_str(), F_OK) )
+			string dir = it->path().string();
+			if (dir.find("ttyACM") != string::npos)
 			{
-				portList[portPath] = new UsbCdcIoChannel(portPath, portName.str());
+				string modalias;
+				int interfaceNumber = -1;
+
+				std::ifstream modAliasStream((it->path()/"device/modalias").string().c_str());
+				modAliasStream >> modalias;
+
+				std::ifstream ifNumStream((it->path()/"device/bInterfaceNumber").string().c_str());
+				ifNumStream >> interfaceNumber;
+				if (modalias.find(cdcIdStream.str()) == 0 && interfaceNumber == 0)
+				{
+					const string filename = it->path().filename().string();
+					const string portPath = string("/dev/") + filename;
+
+					PortInfo portInfo(filename, portPath, PortInfo::CDC);
+
+					if (productId == 0x0010)
+					{
+						portInfo.useFlowControl = true;
+						portInfo.useCrc = true;
+					}
+
+					//if (open)
+					{
+						portInfo.status = UsbCdcIoChannel(portInfo).getStatus();
+					}
+					portList[portInfo.name] = portInfo;
+				}
 			}
 		}
 	}
 #endif
 }
 
+
+void UsbCdcIoChannel::enumeratePorts (PortMap& portList, bool open)
+{
+	createCdcPortList(0x2047, 0x0013, portList); //eZ-FET
+	createCdcPortList(0x2047, 0x0014, portList); //MSP-FET
+	createCdcPortList(0x2047, 0x0010, portList); //UIF
+}
+
 std::string UsbCdcIoChannel::retrieveSerialFromId(const std::string& id)
 {
 #if defined(_WIN32) || defined(_WIN64)
-	std::stringstream sstr(id);
-
-	const size_t idBegin = sstr.str().find_last_of('\\') + 1;
-
-	return sstr.str().substr(idBegin, 16);
+	const size_t idBegin = id.find_last_of('\\') + 1;
+	return id.substr(idBegin, 16);
 #else
 	const size_t begin = id.find_last_of('_') + 1;
 	const size_t end = id.find_last_of('-');
@@ -220,32 +374,29 @@ std::string UsbCdcIoChannel::retrieveSerialFromId(const std::string& id)
 #endif
 }
 
-long UsbCdcIoChannel::getStatus()
-{
- 	return status;
-}
-
-
 bool UsbCdcIoChannel::openPort()
 {
-	const std::string dev = portPrefix + name;
-		
 	ioService = new boost::asio::io_context;
 	port = new boost::asio::serial_port(*ioService);
+	timer = new boost::asio::steady_timer(*ioService);
 
-	if ( boost::system::error_code ec = port->open(dev, ec) )
+	boost::system::error_code ec;
+	ec = port->open(portInfo.path, ec);
+	if (ec != boost::system::error_condition(boost::system::errc::success))
 	{
 		int retry = 5;
-		while (ec && --retry )
+		while ((ec != boost::system::error_condition(boost::system::errc::success))
+			&& (--retry ))
 		{
-			boost::this_thread::sleep(boost::get_system_time() + boost::posix_time::milliseconds(5));
-			ec = port->open(dev, ec);
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+			ec = port->open(portInfo.path, ec);
 		}
 
-		if ( ec == boost::system::error_condition(boost::system::errc::permission_denied) )
-			status = inUseByAnotherInstance;
-
-		if (ec)
+		if (ec == boost::system::error_condition(boost::system::errc::permission_denied))
+		{
+			portInfo.status = PortInfo::inUseByAnotherInstance;
+		}
+		if (ec != boost::system::error_condition(boost::system::errc::success))
 		{
 			close();
 			return false;
@@ -254,14 +405,15 @@ bool UsbCdcIoChannel::openPort()
 	return true;
 }
 
-
 void UsbCdcIoChannel::retrieveStatus()
 {
-	status = freeForUse;
+	portInfo.status = PortInfo::freeForUse;
 
 	if (!isOpen())
 	{
 		openPort();
+		//Seeing issues on some platforms (eg. Ubuntu) when port is immediately closed again
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 		close();
 	}
 }
@@ -274,222 +426,238 @@ bool UsbCdcIoChannel::open()
 		return false;
 	}
 
-	status = freeForUse;
+	portInfo.status = PortInfo::freeForUse;
 
 	try
 	{
 		const int baudrate = 460800;
 
+#if defined(__APPLE__)
+		// Vanilla boost does not provide method to set non-standard baudrates,
+		// so we have to set it low-level
+		if (ioctl (port->native_handle(), _IOW('T', 2, speed_t), &baudrate, 1) < 0)
+		{
+			return false;
+		}
+#else
 		port->set_option( serial_port::baud_rate( baudrate ) );
+#endif
 		port->set_option( serial_port::flow_control( serial_port::flow_control::none ) );
 		port->set_option( serial_port::parity( serial_port::parity::none ) );
 		port->set_option( serial_port::stop_bits( serial_port::stop_bits::one ) );
 		port->set_option( serial_port::character_size(8) );
 	}
-	catch (const boost::system::error_code&) {}
-
-	inputBuffer.resize(inputReportSize+3);
+	catch (const boost::system::system_error&)
+	{
+		return false;
+	}
 
 	return true;
 }
 
-void UsbCdcIoChannel::cleanup () 
+void UsbCdcIoChannel::cleanup()
 {
+	boost::system::error_code ec;
 	if (isOpen())
 	{
-		boost::system::error_code ec = port->close(ec);
+		port->close(ec);
 	}
+	delete timer;
+	timer = 0;
 	delete port;
 	port = 0;
 	delete ioService;
 	ioService = 0;
 }
 
-bool UsbCdcIoChannel::close () 
+bool UsbCdcIoChannel::close()
 {
 	cleanup();
 	return true;
 }
 
-bool UsbCdcIoChannel::isOpen ()
+
+bool UsbCdcIoChannel::isOpen() const
 {
 	return port && port->is_open();
 }
 
-boost::mutex readWriteMutex;
 
-#if BOOST_VERSION >= 107000
-#define GET_IO_SERVICE(s) ((boost::asio::io_context&)(s).get_executor().context())
-#else
-#define GET_IO_SERVICE(s) ((s).get_io_service())
-#endif
-
-class AsyncTransferHandler
+void UsbCdcIoChannel::cancel()
 {
-public:	
-	AsyncTransferHandler(serial_port& port) : 
-		port(port), 
-		timer(GET_IO_SERVICE(port)), 
-		result(RES_NONE), 
-		bytesTransfered(0) {}
+	cancelled = true;
 
-	int read(unsigned char* buf, size_t bufSize, uint32_t timeout)
+	if (timer && timer->expires_after(boost::asio::chrono::milliseconds(0)) > 0)
 	{
-		timer.expires_after(boost::asio::chrono::milliseconds(timeout));
-		timer.async_wait(boost::bind(&AsyncTransferHandler::onTimeout, this, _1));
-
-		async_read(port, buffer(buf, bufSize),
-				 boost::bind(&AsyncTransferHandler::onTransferComplete, this, _1, _2) );
-
-		GET_IO_SERVICE(port).restart();
-
-#if defined(_WIN32) || defined(_WIN64)
-		while ( result == RES_NONE )
-			GET_IO_SERVICE(port).run_one();
-
-		if (result != RES_COMPLETE)
-		{
-			readWriteMutex.lock();
-			port.cancel();
-			readWriteMutex.unlock();
-		}
-
-		if (result != RES_TIMEOUT)
-			timer.cancel();
-#else
-		while ( result == RES_NONE )
-			GET_IO_SERVICE(port).run();
-#endif
-		GET_IO_SERVICE(port).stop();
-
-		return (result == RES_COMPLETE) ? static_cast<int>(bytesTransfered) : -1;
-	}	
-
-private:
-	enum Result { RES_NONE, RES_ERROR, RES_TIMEOUT, RES_COMPLETE };
-
-	serial_port& port;
-	boost::asio::steady_timer timer;
-	Result result;
-	int bytesTransfered;
-
-	void onTransferComplete(const boost::system::error_code& ec, size_t numBytes)
-	{
-#ifdef UNIX
-		timer.cancel();
-#endif
-		if ( ec != error::operation_aborted && result == RES_NONE )
-			result = ec ? RES_ERROR : RES_COMPLETE;
-
-		bytesTransfered = (result == RES_COMPLETE) ? static_cast<int>(numBytes) : -1;
+		timer->async_wait(std::bind(&UsbCdcIoChannel::onTimer, this, std::placeholders::_1));
 	}
+}
 
-	void onTimeout(const boost::system::error_code& ec)
+
+void UsbCdcIoChannel::setTimer(uint32_t duration)
+{
+	timerEvent = false;
+
+	if (timer)
 	{
-#ifdef UNIX
-		port.cancel();
-#endif
-		if( ec != error::operation_aborted && result == RES_NONE )
-			result = ec ? RES_ERROR : RES_TIMEOUT;
+		boost::system::error_code ec;
+		timer->expires_after(boost::asio::chrono::milliseconds(duration));
+		timer->async_wait(bind(&UsbCdcIoChannel::onTimer, this, std::placeholders::_1));
 	}
-};
+}
 
-int UsbCdcIoChannel::read(HalResponse& resp, uint32_t timeout)
+
+void UsbCdcIoChannel::startRead(size_t offset, size_t numBytes)
+{
+	bytesReceived = 0;
+	readEvent = false;
+	async_read(*port, buffer(&inputBuffer[offset], numBytes), bind(&UsbCdcIoChannel::onRead, this, std::placeholders::_1, std::placeholders::_2));
+}
+
+
+void UsbCdcIoChannel::onTimer(const boost::system::error_code& ec)
+{
+	timerEvent = (ec != error::operation_aborted);
+}
+
+
+void UsbCdcIoChannel::onRead(const boost::system::error_code& ec, size_t numBytes)
+{
+	readEvent = (ec != error::operation_aborted);
+	bytesReceived = numBytes;
+}
+
+
+size_t UsbCdcIoChannel::read(HalResponse& resp)
 {
 	if (!isOpen())
 		return 0;
 
-	if(actSize == 0)
-		expSize = 6;
+	size_t actSize = 0;
+	size_t expSize = 1;
 
-	if (expSize > inputBuffer.size())
-		inputBuffer.resize(expSize);
+	setTimer(1000);
+	startRead(0, expSize);
 
-	int bytesRead = -1;
-	try
+	while (ioService->run_one())
 	{
-		AsyncTransferHandler readHandler(*port);
-		bytesRead = readHandler.read(&inputBuffer[actSize], expSize-actSize, timeout);
-	} catch(const std::exception&) {}
-
-	if (bytesRead < 0)
-	{
-		const std::string dev = portPrefix + name;
-
-		//Important, test port must be gone before close can be called
-		boost::system::error_code ec = serial_port(*ioService).open(dev, ec);
-
-		if (ec == boost::system::error_condition(boost::system::errc::no_such_file_or_directory))
+		if (readEvent)
 		{
-			if (comState != ComStateDisconnect)
+			if (bytesReceived > 0)
 			{
-				this->close();
+				if (actSize == 0)
+					expSize = inputBuffer[0] + ( (inputBuffer[0] & 0x01) ? 3 : 4);
+
+				actSize += bytesReceived;
+
+				if (actSize == expSize)
+				{
+					timer->cancel();
+					break;
+				}
 			}
-			comState = ComStateDisconnect;
+
+			startRead(actSize, expSize - actSize);
+		}
+
+		else if (timerEvent)
+		{
+			if (wasUnplugged() || cancelled)
+			{
+				cancelled = false;
+				port->cancel();
+				break;
+			}
+
+			setTimer(1000);
+		}
+
+		if (ioService->stopped())
+		{
+			ioService->restart();
 		}
 	}
 
-	if (bytesRead > 0)
+	//Let cancelled tasks finish
+	ioService->run();
+	ioService->restart();
+
+
+	if (actSize == expSize)
 	{
-		if (actSize == 0)
-			expSize = inputBuffer[0] + ( (inputBuffer[0] & 0x01) ? 3 : 4);
-
-		actSize += static_cast<uint16_t>(bytesRead & 0xFFFF);
-
-		//Perform sanity check on message size before trying to read it
-		if (expSize < actSize || (expSize % 2) != 0)
-		{
-			resp.setError(HalResponse::Error_Size);
-			expSize = actSize = 0;
-			return bytesRead;
-		}
-
-
-		if(expSize && actSize == expSize)
-		{
-	#ifdef DB_PRINT
-			Logging::DefaultLogger().PrintReceiveBuffer(&inputBuffer[0], expSize);
-	#endif // DB_PRINT
-
-			const uint16_t msgSize = expSize;
-			actSize=0;
-			expSize=0;
-
-			resp.setType(inputBuffer[1]);
-			resp.setId(inputBuffer[2] & 0x7f); //Don't mask async bit (0x40)
-			resp.setIsComplete(inputBuffer[2]);
-			
-			if(msgSize >= 2)
-			{
-				resp.append(&inputBuffer[1], inputBuffer[0]);
-			}
-			
-			const uint16_t expectedCRC = createCrc(&inputBuffer[0]);
-			const uint16_t actualCRC = inputBuffer[msgSize-2] + (inputBuffer[msgSize-1] << 8);
-			if( actualCRC != expectedCRC)
-			{
-				resp.setError(HalResponse::Error_CRC);
-			}
-
-			return bytesRead;
-		}
+		processMessage(actSize, resp);
+		return actSize;
 	}
-    return 0;
+	return 0;
 }
 
 
-enum ComState UsbCdcIoChannel::poll ()
+bool UsbCdcIoChannel::wasUnplugged()
+{
+#if defined(_WIN32) || defined(_WIN64)
+	boost::system::error_code ec;
+	ec = serial_port(*ioService).open(portInfo.path, ec);
+
+	if (ec == boost::system::error_condition(boost::system::errc::no_such_file_or_directory))
+	{
+		comState = ComStateDisconnect;
+	}
+#else
+	/*
+	 * Workaround for El Capitan with UIF: the above branch triggers sending of SET_LINE_CODING
+	 * Do not trigger SET_LINE_CODING here
+	 */
+
+	/* Also workaround for Ubuntu 16 with UIF: the above branch triggers sending of SetControlLineState, which we don't want here */
+
+	struct stat dev;
+	if (stat(portInfo.path.c_str(), &dev) != 0)
+	{
+		comState = ComStateDisconnect;
+	}
+#endif
+	return comState == ComStateDisconnect;
+}
+
+
+void UsbCdcIoChannel::processMessage(size_t msgSize, HalResponse& resp)
+{
+#ifdef DB_PRINT
+	Logging::DefaultLogger().PrintReceiveBuffer(&inputBuffer[0], static_cast<long>(msgSize));
+#endif // DB_PRINT
+
+	if (portInfo.useCrc)
+	{
+		const uint16_t expCrc = createCrc(&inputBuffer[0]);
+		const uint16_t actCrc = (inputBuffer[msgSize-1] << 8) | inputBuffer[msgSize-2];
+		if (actCrc != expCrc)
+		{
+			resp.setError(HalResponse::Error_CRC);
+		}
+	}
+	resp.setType(inputBuffer[1]);
+	resp.setId(inputBuffer[2] & 0x7f); //Don't mask async bit (0x40)
+	resp.setIsComplete(inputBuffer[2]);
+
+	if (msgSize >= 2)
+	{
+		resp.append(&inputBuffer[1], inputBuffer[0]);
+	}
+}
+
+
+enum ComState UsbCdcIoChannel::poll()
 {
 	return comState;
 }
 
 
-int UsbCdcIoChannel::write (const uint8_t* payload, size_t len)
+size_t UsbCdcIoChannel::write(const uint8_t* payload, size_t len)
 {
 	if (!isOpen())
 		return 0;
 
-	int ret_len = static_cast<int>(len);
+	const size_t ret_len = len;
 
 	uint8_t report[256] = {0};
 
@@ -500,20 +668,23 @@ int UsbCdcIoChannel::write (const uint8_t* payload, size_t len)
 	if (!(report[0] & 0x01))
 		report[len++] = 0x00;
 
-	//create crc and append it to data
-	uint16_t crc = createCrc(report);
+	if (portInfo.useCrc)
+	{
+		//create crc and append it to data
+		uint16_t crc = createCrc(report);
 
-	report[len++] = crc & 0x00ff;
-	report[len++] = (crc & 0xff00) >> 8;
+		report[len++] = crc & 0x00ff;
+		report[len++] = (crc & 0xff00) >> 8;
+	}
 
 	size_t n_write = 0;
 	uint8_t send_buf[512];
 
-	if (isXoffFlowOn)
+	if (portInfo.useFlowControl)
 	{
 		//mask XOFF, XON and MASK in data stream
 		size_t j = 0;
-		
+
 		for (size_t i = 0; i < len; i++)
 		{
 			const uint8_t ch = report[i];
@@ -539,32 +710,32 @@ int UsbCdcIoChannel::write (const uint8_t* payload, size_t len)
 		memcpy(send_buf, report, n_write);
 	}
 
-	readWriteMutex.lock();
+#ifdef DB_PRINT
+	Logging::DefaultLogger().PrintSendBuffer(send_buf, static_cast<long>(n_write));
+#endif // DB_PRINT
+
 	boost::system::error_code ec;
 	const size_t nWritten = boost::asio::write(*port, buffer(send_buf, n_write), transfer_all(), ec);
-              readWriteMutex.unlock();
+
 	if (nWritten != n_write)
 	{
 		return 0;
 	}
 
-#ifdef DB_PRINT
-	Logging::DefaultLogger().PrintSendBuffer(send_buf, n_write);
-#endif // DB_PRINT
 	return ret_len;
 }
 
-const char* UsbCdcIoChannel::getName ()
+const char* UsbCdcIoChannel::getName() const
 {
-	return name.c_str();
+	return portInfo.name.c_str();
 }
 
-const char* UsbCdcIoChannel::getInterfaceName ()
+string UsbCdcIoChannel::getSerial() const
 {
-	return name.c_str();
+	return portInfo.serial;
 }
 
-const std::string UsbCdcIoChannel::getSerial()
+PortInfo::Status UsbCdcIoChannel::getStatus() const
 {
-	return serial;
+ 	return portInfo.status;
 }

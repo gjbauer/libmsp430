@@ -47,8 +47,8 @@
 
 #include "hw_compiler_specific.h"
 #include "bios.h"
-#include "../v3_0p.h"
-#include "../stream.h"
+#include "v3_0p.h"
+#include "stream.h"
 #include <stdlib.h>
 
 

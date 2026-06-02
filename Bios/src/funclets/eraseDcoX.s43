@@ -3,6 +3,7 @@
  * 
  * Funclet which gets uploaded onto the target and erases the 
  *  specified FLASH area
+ *
  * Copyright (C) 2012 Texas Instruments Incorporated - http://www.ti.com/ 
  * 
  * 
@@ -15,8 +16,7 @@
  *
  *    Redistributions in binary form must reproduce the above copyright
  *    notice, this list of conditions and the following disclaimer in the 
- *    documentation and/or other materiFunclet which gets uploaded onto the target and erases the 
-;                specified FLASH areaals provided with the   
+ *    documentation and/or other materials provided with the
  *    distribution.
  *
  *    Neither the name of Texas Instruments Incorporated nor the names of
@@ -127,8 +127,6 @@ Loop
  
             decd    R11                   ; Loop on erase cycles.
             jnz     Again
-
-            mov.b   #XT2OFF+RSEL2+RSEL1+RSEL0,&BCSCTL1 ;BCL12 Workaround
 
             jmp     Stop
 

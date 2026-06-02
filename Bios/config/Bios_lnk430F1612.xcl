@@ -141,6 +141,7 @@
 -Z(CONST)SAFECOREVERSION=FFDE-FFDF
 -Z(CONST)COREVERSION=FDD8-FDDA
 -Z(CONST)HALSIG=DFFE-DFFF
+-Z(CODE)TOOLID=FDD6-FDD7
 // ---------------------------------------------------------
 // The end
 // ---------------------------------------------------------

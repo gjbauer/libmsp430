@@ -137,4 +137,5 @@ extern __ro_placement volatile const unsigned short safe_core_version_;
 extern unsigned long bios_device_flags_;
 extern unsigned short bios_info_hw_0_;
 extern unsigned short bios_info_hw_1_;
+extern const unsigned short tool_id_;
 #endif
