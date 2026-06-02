@@ -1,5 +1,5 @@
 # About
-libMSP430 is a friendly fork-and-fix of the canonocal TI 'MSP430DLLv3' for linux, 
+libmsp430 is a friendly fork-and-fix of the canonocal TI 'MSP430DLLv3' for linux, 
 which is previously only available as a zip file with a hard to find patch for 
 Debian/Ubuntu.
 
